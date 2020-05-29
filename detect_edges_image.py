@@ -1,8 +1,3 @@
-# USAGE
-# python detect_edges_image.py --edge-detector hed_model --image images/guitar.jpg
-
-# import the necessary packages
-import argparse
 from typing import List
 
 import cv2
@@ -10,15 +5,93 @@ import os
 from PIL import Image, ImageDraw
 import math as m
 from functools import cmp_to_key
-import copy
+import numpy as np
 
-# construct the argument parser and parse the arguments
-# ap = argparse.ArgumentParser()
-# ap.add_argument("-d", "--edge-detector", type=str, required=True,
-#     help="path to OpenCV's deep learning edge detector")
-# ap.add_argument("-i", "--image", type=str, required=True,
-#     help="path to input image")
-# args = vars(ap.parse_args())
+
+class HybridAlgorithm:
+    def __init__(self, image):
+        self.image = image
+        self.lab, self.class_num = None, None
+
+    def result_pic(self):
+        lab_pic = Image.new('RGB', self.image.size)
+        draw = ImageDraw.Draw(lab_pic)
+
+        for y in range(self.image.size[1]):
+            for x in range(self.image.size[0]):
+                draw.point(xy=(x, y), fill=(10 * self.lab[y][x], 10 * self.lab[y][x], 10 * self.lab[y][x]))
+
+        return lab_pic
+
+    def log_results(self):
+        f = open(r'logs\log.txt', 'w')
+        for i in self.lab:
+            for j in i:
+                f.write(str(j))
+            f.write('\n')
+
+    def run_algorithm(self):
+        ed = EdgeDetector()
+        self.image = ed.passing_through_net(image=self.image)
+        self.image = ed.turning_to_black_and_white()
+
+        cf = ClusterFinder(self.image)
+        self.lab, self.class_num = cf.forest_fire_method()
+
+        self.result_pic().show()
+
+        cr = ClusterReducer(lab=self.lab, class_num=self.class_num)
+        self.lab = cr.iterations()
+
+        self.result_pic().show()
+
+        return self.result_pic()
+
+
+class EdgeDetector:
+    def __init__(self):
+        # initializing hed model
+        proto_path = os.path.sep.join(['hed_model', "deploy.prototxt"])
+        model_path = os.path.sep.join(['hed_model', "hed_pretrained_bsds.caffemodel"])
+        self.net = cv2.dnn.readNetFromCaffe(proto_path, model_path)
+
+        # register our new layer with the model
+        cv2.dnn_registerLayer("Crop", CropLayer)
+
+        # instances of cv2 and PIL images
+        self.image, self.out_pil = None, None
+        # image sizes
+        self.H, self.W = None, None
+
+    def open_image(self, image):
+        # load the input image and grab its dimensions
+        self.image = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
+        (self.H, self.W) = self.image.shape[:2]
+
+        # construct a blob out of the input image for the Holistically-Nested
+        # Edge Detector
+        blob = cv2.dnn.blobFromImage(self.image, scalefactor=1.0, size=(self.W, self.H),
+                                     mean=(104.00698793, 116.66876762, 122.67891434),
+                                     swapRB=False, crop=False)
+        return blob
+
+    def passing_through_net(self, image):
+        print("[INFO] performing holistically-nested edge detection...")
+        self.net.setInput(self.open_image(image))
+        hed = self.net.forward()
+        hed = cv2.resize(hed[0, 0], (self.W, self.H))
+        hed = (255 * hed).astype("uint8")
+
+        hed = cv2.cvtColor(hed, cv2.COLOR_BGR2RGB)
+        self.out_pil = Image.fromarray(hed)
+
+        return self.out_pil
+
+    def turning_to_black_and_white(self):
+        thresh = 50
+        self.out_pil = self.out_pil.convert('L').point(lambda x: 255 if x > thresh else 0, mode='1')
+
+        return self.out_pil
 
 
 class CropLayer(object):
@@ -54,232 +127,175 @@ class CropLayer(object):
                 self.startX:self.endX]]
 
 
-def predict(image_path):
-    # load our serialized edge detector from disk
-    print("[INFO] loading edge detector...")
-    # protoPath = os.path.sep.join([args["edge_detector"],
-    #     "deploy.prototxt"])
-    # modelPath = os.path.sep.join([args["edge_detector"],
-    #     "hed_pretrained_bsds.caffemodel"])
+class ClusterFinder:
+    def __init__(self, image):
+        self.image = image
+        self.W, self.H = image.size
 
-    protoPath = os.path.sep.join(['hed_model', "deploy.prototxt"])
-    modelPath = os.path.sep.join(['hed_model', "hed_pretrained_bsds.caffemodel"])
+        # matrix of clusters
+        self.lab = []
 
-    net = cv2.dnn.readNetFromCaffe(protoPath, modelPath)
+    def forest_fire_method(self):
+        self.lab = [[0 for not_global_variable in range(self.W)] for another_not_global_variable in range(self.H)]
+        RegLS = 0
+        for y in range(self.H):
+            for x in range(self.W):
+                if self.lab[y][x] == 0 and self.image.getpixel((x, y)) == 0:
+                    RegLS += 1
+                    self.lab[y][x] = RegLS
+                    p_stack = [[y, x]]
+                    while len(p_stack) > 0:
+                        last = p_stack.pop()
 
-    # register our new layer with the model
-    cv2.dnn_registerLayer("Crop", CropLayer)
+                        y_first = last[0] if last[0] == 0 else last[0] - 1
+                        y_last = last[0] if last[0] == self.H - 1 else last[0] + 2
+                        for i in range(y_first, y_last):
+                            x_first = last[1] if last[1] == 0 else last[1] - 1
+                            x_last = last[1] if last[1] == self.W - 1 else last[1] + 2
+                            for j in range(x_first, x_last):
+                                if self.lab[i][j] == 0 and self.image.getpixel((j, i)) == 0:
+                                    self.lab[i][j] = RegLS
+                                    p_stack.append([i, j])
 
-    # load the input image and grab its dimensions
-    # image = cv2.imread(args["image"])
-    image = cv2.imread(image_path)
-    (H, W) = image.shape[:2]
-
-    # convert the image to grayscale, blur it, and perform Canny
-    # edge detection
-    # print("[INFO] performing Canny edge detection...")
-    # gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    # blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-    # canny = cv2.Canny(blurred, 30, 150)
-
-    # construct a blob out of the input image for the Holistically-Nested
-    # Edge Detector
-    blob = cv2.dnn.blobFromImage(image, scalefactor=1.0, size=(W, H),
-                                 mean=(104.00698793, 116.66876762, 122.67891434),
-                                 swapRB=False, crop=False)
-
-    # set the blob as the input to the network and perform a forward pass
-    # to compute the edges
-    print("[INFO] performing holistically-nested edge detection...")
-    net.setInput(blob)
-    hed = net.forward()
-    hed = cv2.resize(hed[0, 0], (W, H))
-    hed = (255 * hed).astype("uint8")
-
-    # show the output edge detection results for Canny and
-    # Holistically-Nested Edge Detection
-    # cv2.imshow("Input", image)
-    # cv2.imshow("Canny", canny)
-    # cv2.imshow("HED", hed)
-    # cv2.waitKey(0)
-
-    # canny = cv2.cvtColor(canny, cv2.COLOR_BGR2RGB)
-    # out_pil = Image.fromarray(canny)
-    # out_pil.show()
-
-    hed = cv2.cvtColor(hed, cv2.COLOR_BGR2RGB)
-    out_pil = Image.fromarray(hed)
-    return out_pil
+        return self.lab, RegLS
 
 
-out_pil = predict('images/liza.jpg')
-out_pil.show()
+class ClusterReducer:
+    def __init__(self, lab, class_num):
 
-# image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-# in_pil = Image.fromarray(image)
-# in_pil.show()
-print("[INFO] Turning image to black and white")
+        self.lab = lab
+        self.class_num = class_num
 
-thresh = 50
-fn = lambda x: 255 if x > thresh else 0
-out_pil = out_pil.convert('L').point(fn, mode='1')
-out_pil.show()
+        self.class_count: List[int] = self.count_classes()
+        self.class_count_dict: List[List[int]] = self.make_classes_dict()
 
-lab_pic = Image.new('RGB', out_pil.size)
-draw = ImageDraw.Draw(lab_pic)
+        self.centres_list = self.get_areas_centres()
+        # self.count_classes()
+        # self.make_classes_dict()
 
-lab = [[0 for j in range(out_pil.size[0])] for i in range(out_pil.size[1])]
-RegLS = 0
-for y in range(out_pil.size[1]):
-    for x in range(out_pil.size[0]):
-        if lab[y][x] == 0 and out_pil.getpixel((x, y)) == 0:
-            RegLS += 1
-            lab[y][x] = RegLS
-            p_stack = [[y, x]]
-            while len(p_stack) > 0:
-                last = p_stack.pop()
+    def count_classes(self):
+        a = []
+        for i in range(1, self.class_num + 1):
+            class_pixels_sum = 0
+            for j in self.lab:
+                class_pixels_sum += j.count(i)
+            a.append(class_pixels_sum)
+        return a
 
-                y_first = last[0] if last[0] == 0 else last[0] - 1
-                y_last = last[0] if last[0] == out_pil.size[1] - 1 else last[0] + 2
-                for i in range(y_first, y_last):
-                    x_first = last[1] if last[1] == 0 else last[1] - 1
-                    x_last = last[1] if last[1] == out_pil.size[0] - 1 else last[1] + 2
-                    for j in range(x_first, x_last):
-                        # try:
-                        if lab[i][j] == 0 and out_pil.getpixel((j, i)) == 0:
-                            lab[i][j] = RegLS
-                            p_stack.append([i, j])
+    def make_classes_dict(self):
+        a = [[i, self.class_count[i]] for i in range(1, len(self.class_count))]
+        a.sort(key=lambda x: x[1])
+        return a
 
-print("[INFO] Showing results")
+    # class_count = []
+    # for i in range(1, RegLS + 1):
+    #     sum = 0
+    #     for j in lab:
+    #         sum += j.count(i)
+    #     class_count.append(sum)
+    #
+    # print("[INFO] Turning to dict")
+    #
+    # class_count_dict: List[List[int]] = [[i, class_count[i]] for i in range(1, len(class_count))]
+    # class_count_dict.sort(key=lambda x: x[1])
+    #
+    # print('first class is:', class_count_dict[0])
 
-for y in range(out_pil.size[1]):
-    for x in range(out_pil.size[0]):
-        draw.point(xy=(x, y), fill=(10 * lab[y][x], 10 * lab[y][x], 10 * lab[y][x]))
+    def find_area_center(self, class_num):
+        sum_x, sum_y, dot_num = 0, 0, 0
+        for i in range(len(self.lab)):
+            for j in range(len(self.lab[i])):
+                if self.lab[i][j] == class_num:
+                    sum_x += j
+                    sum_y += i
+                    dot_num += 1
+        return [sum_x // dot_num, sum_y // dot_num]
 
-lab_pic.show()
+    def get_areas_centres(self):
+        a = []
+        for i in range(len(self.class_count)):
+            a.append([i, self.find_area_center(i)])
+        return a
 
-print("[INFO] Logging results")
+    @staticmethod
+    def find_distance(point1, point2):
+        return m.sqrt((point1[0] - point2[0]) ** 2 + (point1[1] - point2[1]) ** 2)
 
-f = open(r'logs\log.txt', 'w')
-for i in lab:
-    for j in i:
-        f.write(str(j))
-    f.write('\n')
+    def find_closest_class(self, class_num):
+        min_dist = self.find_distance([0, 0], [len(self.lab), len(self.lab[0])])
+        closest_class = -1
+        current_center = self.centres_list[class_num][1]
+        print(current_center)
+        for i in range(len(self.centres_list)):
+            if self.centres_list[i][0] is not None:
+                dist = self.find_distance(self.centres_list[i][1], current_center)
+                if dist < min_dist and i != class_num:
+                    min_dist = dist
+                    closest_class = i
+        return closest_class
 
-print("[INFO] Counting items is classes")
+    def merge_closest_classes(self, class_num):
+        print(class_num)
+        closest_class_num = self.find_closest_class(class_num)
+        for i in range(len(self.lab)):
+            for j in range(len(self.lab[i])):
+                if self.lab[i][j] == class_num:
+                    self.lab[i][j] = closest_class_num
+        self.centres_list[class_num] = [None, None]
+        self.centres_list[closest_class_num] = \
+            [closest_class_num, self.find_area_center(closest_class_num)]
+        print('classes', class_num, 'and', closest_class_num, 'merged!', sep=' ')
+        return closest_class_num
 
-class_count = []
-for i in range(1, RegLS + 1):
-    sum = 0
-    for j in lab:
-        sum += j.count(i)
-    class_count.append(sum)
+    # print('[INFO] Counting classes centres')
+    #
+    # centres_list = get_areas_centres()
+    #
+    # print('[INFO] Merging minor classes')
 
-print("[INFO] Turning to dict")
+    @staticmethod
+    def compare(x, y):
+        if x[1] is None and y[1] is None:
+            return 1
+        if x[1] is None or y[1] is None:
+            return 1
+        return x[1] - y[1]
 
-class_count_dict: List[List[int]] = [[i, class_count[i]] for i in range(1, len(class_count))]
-class_count_dict.sort(key=lambda x: x[1])
+    def full_merging(self, arg):
+        smallest_class = self.class_count_dict[arg][0]
+        closest_class_num = self.merge_closest_classes(smallest_class)
+        previous_value = self.class_count_dict[arg][1]
+        self.class_count_dict[arg] = [None, None]
+        for i in self.class_count_dict:
+            if i[0] == closest_class_num:
+                i = [closest_class_num, i[1] + previous_value]
+                break
+        self.class_count_dict.sort(key=cmp_to_key(self.compare))
 
-print('first class is:', class_count_dict[0])
+    def iterations(self):
+        i = 0
+        ans_string = ''
+        print('Picture contains', len(self.class_count_dict), 'classes')
+        while ans_string != 'N':
+            it = int(input('Enter number of iterations:'))
+            for j in range(it):
+                self.full_merging(i)
+                i += 1
 
+            # lab_pic_class = Image.new('RGB', out_pil.size)
+            # draw_class = ImageDraw.Draw(lab_pic_class)
+            # for y in range(out_pil.size[1]):
+            #     for x in range(out_pil.size[0]):
+            #         draw_class.point(xy=(x, y), fill=(20 * lab[y][x], 20 * lab[y][x], 20 * lab[y][x]))
+            #
+            # lab_pic_class.show()
 
-def find_area_center(class_num):
-    sum_x, sum_y, dot_num = 0, 0, 0
-    for i in range(len(lab)):
-        for j in range(len(lab[i])):
-            if lab[i][j] == class_num:
-                sum_x += j
-                sum_y += i
-                dot_num += 1
-    return [sum_x // dot_num, sum_y // dot_num]
+            ans_string = input('Enter `N` to finish merging')
 
-
-def get_areas_centres():
-    a = []
-    for i in range(len(class_count)):
-        a.append([i, find_area_center(i)])
-    return a
-
-
-def find_distance(point1, point2):
-    return m.sqrt((point1[0]-point2[0]) ** 2 + (point1[1]-point2[1]) ** 2)
-
-
-def find_closest_class(class_num):
-    min_dist = find_distance([0, 0], [out_pil.size[0], out_pil.size[1]])
-    closest_class = -1
-    current_center = centres_list[class_num][1]
-    print(current_center)
-    for i in range(len(centres_list)):
-        if centres_list[i][0] != None:
-            dist = find_distance(centres_list[i][1], current_center)
-            if dist < min_dist and i != class_num:
-                min_dist = dist
-                closest_class = i
-            # print(i)
-    return closest_class
-
-
-def merge_closest_classes(class_num):
-    print(class_num)
-    closest_class_num = find_closest_class(class_num)
-    for i in range(len(lab)):
-        for j in range(len(lab[i])):
-            if lab[i][j] == class_num:
-                lab[i][j] = closest_class_num
-    centres_list[class_num] = [None, None]
-    centres_list[closest_class_num] = \
-    [closest_class_num, find_area_center(closest_class_num)]
-    print('classes', class_num, 'and', closest_class_num, 'merged!', sep=' ')
-    return closest_class_num
-
-
-print('[INFO] Counting classes centres')
-
-centres_list = get_areas_centres()
-
-print('[INFO] Merging minor classes')
-
-
-def compare(x, y):
-    if x[1] == None and y[1] == None:
-        return 1
-    if x[1] == None or y[1] == None:
-        return 1
-    return x[1] - y[1]
+        return self.lab
 
 
-def full_merging(arg):
-    smallest_class = class_count_dict[arg][0]
-    closest_class_num = merge_closest_classes(smallest_class)
-    previous_value = class_count_dict[arg][1]
-    class_count_dict[arg] = [None, None]
-    for i in class_count_dict:
-        if i[0] == closest_class_num:
-            i = [closest_class_num, i[1] + previous_value]
-            break
-    class_count_dict.sort(key=cmp_to_key(compare))
-
-
-def iterations():
-    i = 0
-    ans_string = ''
-    print('Picture contains', len(class_count_dict), 'classes')
-    while ans_string != 'N':
-        it = int(input('Enter number of iterations:'))
-        for j in range(it):
-            full_merging(i)
-            i += 1
-
-        lab_pic_class = Image.new('RGB', out_pil.size)
-        draw_class = ImageDraw.Draw(lab_pic_class)
-        for y in range(out_pil.size[1]):
-            for x in range(out_pil.size[0]):
-                draw_class.point(xy=(x, y), fill=(20 * lab[y][x], 20 * lab[y][x], 20 * lab[y][x]))
-
-        lab_pic_class.show()
-
-        ans_string = input('Enter `N` to finish merging')
-
-
-iterations()
+if __name__ == '__main__':
+    image = Image.open('images/vityan.jpg')
+    ha = HybridAlgorithm(image)
+    ha.run_algorithm()
