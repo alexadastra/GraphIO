@@ -23,8 +23,8 @@ class HybridAlgorithm:
 
         return lab_pic
 
-    def log_results(self):
-        f = open(r'logs\log.txt', 'w')
+    def log_results(self, file_name):
+        f = open(r'logs/' + file_name + '.txt', 'w')
         for i in self.lab:
             for j in i:
                 f.write(str(j))
@@ -41,11 +41,11 @@ class HybridAlgorithm:
         self.result_pic().show()
 
         cr = ClusterReducer(lab=self.lab, class_num=self.class_num)
-        self.lab = cr.iterations()
+        self.lab, self.class_num = cr.iterations()
 
         self.result_pic().show()
 
-        return self.result_pic()
+        return {'pic': self.result_pic(), 'matr': self.lab, 'num': self.class_num}
 
 
 class EdgeDetector:
@@ -292,10 +292,11 @@ class ClusterReducer:
 
             ans_string = input('Enter `N` to finish merging')
 
-        return self.lab
+        return self.lab, len(self.class_count_dict) - i
 
 
 if __name__ == '__main__':
-    image = Image.open('images/vityan.jpg')
+    image = Image.open('images/cat.jpg')
     ha = HybridAlgorithm(image)
     ha.run_algorithm()
+    ha.log_results('cat')

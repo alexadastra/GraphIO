@@ -1,5 +1,6 @@
 from EditingMethodsClasses import EditingMethods
 from VersionControl import ImageVersionController
+from HybridAlgorithmImplementation import HybridAlgorithm
 
 
 class ImageEditingController:
