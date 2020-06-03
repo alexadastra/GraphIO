@@ -6,6 +6,7 @@ from PIL import Image, ImageDraw
 import math as m
 from functools import cmp_to_key
 import numpy as np
+import json
 
 
 class HybridAlgorithm:
@@ -29,6 +30,9 @@ class HybridAlgorithm:
             for j in i:
                 f.write(str(j))
             f.write('\n')
+
+        with open("logs/data_file.json", "w") as write_file:
+            json.dump(self.lab, write_file)
 
     def run_algorithm(self):
         ed = EdgeDetector()
@@ -170,8 +174,6 @@ class ClusterReducer:
         self.class_count_dict: List[List[int]] = self.make_classes_dict()
 
         self.centres_list = self.get_areas_centres()
-        # self.count_classes()
-        # self.make_classes_dict()
 
     def count_classes(self):
         a = []
@@ -186,20 +188,6 @@ class ClusterReducer:
         a = [[i, self.class_count[i]] for i in range(1, len(self.class_count))]
         a.sort(key=lambda x: x[1])
         return a
-
-    # class_count = []
-    # for i in range(1, RegLS + 1):
-    #     sum = 0
-    #     for j in lab:
-    #         sum += j.count(i)
-    #     class_count.append(sum)
-    #
-    # print("[INFO] Turning to dict")
-    #
-    # class_count_dict: List[List[int]] = [[i, class_count[i]] for i in range(1, len(class_count))]
-    # class_count_dict.sort(key=lambda x: x[1])
-    #
-    # print('first class is:', class_count_dict[0])
 
     def find_area_center(self, class_num):
         sum_x, sum_y, dot_num = 0, 0, 0
@@ -229,7 +217,7 @@ class ClusterReducer:
         for i in range(len(self.centres_list)):
             if self.centres_list[i][0] is not None:
                 dist = self.find_distance(self.centres_list[i][1], current_center)
-                if dist < min_dist and i != class_num:
+                if dist < min_dist and i != class_num and i != 0:
                     min_dist = dist
                     closest_class = i
         return closest_class
@@ -246,12 +234,6 @@ class ClusterReducer:
             [closest_class_num, self.find_area_center(closest_class_num)]
         print('classes', class_num, 'and', closest_class_num, 'merged!', sep=' ')
         return closest_class_num
-
-    # print('[INFO] Counting classes centres')
-    #
-    # centres_list = get_areas_centres()
-    #
-    # print('[INFO] Merging minor classes')
 
     @staticmethod
     def compare(x, y):
@@ -296,7 +278,7 @@ class ClusterReducer:
 
 
 if __name__ == '__main__':
-    image = Image.open('images/cat.jpg')
+    image = Image.open('images/vityan.jpg')
     ha = HybridAlgorithm(image)
     ha.run_algorithm()
-    ha.log_results('cat')
+    ha.log_results('vityan')
