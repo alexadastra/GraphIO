@@ -28,9 +28,8 @@ class ImageLayersController:
         self.structure_layers()
 
     def upload_preprocessed_layers(self, log_path):
-        f = open(log_path, 'r')
         self.class_num = 0
-        with open("logs/data_file.json", "r") as read_file:
+        with open(log_path + ".json", "r") as read_file:
             self.lab = json.load(read_file)
         for i in self.lab:
             for j in i:
@@ -73,5 +72,5 @@ class ImageLayersController:
 
 if __name__ == '__main__':
     image = Image.open(r'images/vityan.jpg')
-    ilc = ImageLayersController(current_image=image, log_path='logs/vityan.txt', layers_logged=True)
+    ilc = ImageLayersController(current_image=image, log_path='logs/vityan', layers_logged=True)
     ilc.show_different_layers()
