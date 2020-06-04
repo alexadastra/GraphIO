@@ -10,32 +10,31 @@ import json
 import random
 
 
+# main class for every stuff
 class HybridAlgorithm:
     def __init__(self, image_):
-        self.image = image_
-        self.lab, self.class_num = None, None
+        self.image = image_  # initializing image
+        self.lab, self.class_num = None, None  # initializing results
 
-    def result_pic(self):
+    def result_pic(self):  # outputs classes presentation
         lab_pic = Image.new('RGB', self.image.size)
         draw = ImageDraw.Draw(lab_pic)
 
-        colors = {}
+        colors = {}  # stores colors for different classes
         for y in range(self.image.size[1]):
             for x in range(self.image.size[0]):
-                # draw.point(xy=(x, y), fill=(10 * self.lab[y][x], 10 * self.lab[y][x], 10 * self.lab[y][x]))
                 if self.lab[y][x] not in colors:
                     colors[self.lab[y][x]] = [random.randint(0, 256), random.randint(0, 256), random.randint(0, 256)]
                 draw.point(xy=(x, y),
                            fill=(colors[self.lab[y][x]][0], colors[self.lab[y][x]][1], colors[self.lab[y][x]][2]))
         return lab_pic
 
-    def log_results(self, file_path):
+    def log_results(self, file_path):  # saves lab in json
         with open(file_path + ".json", "w") as write_file:
             json.dump(self.lab, write_file)
 
-    def run_algorithm(self, log, log_path, save, save_path):
-        alg_stages = []
-        # print(self.image.size)
+    def run_algorithm(self, log, log_path, save, save_path):  # does everything
+        alg_stages = []  # logging stages
         ed = EdgeDetector(self.image)
         print("[INFO] performing holistically-nested edge detection...")
         self.image = ed.passing_through_net()
@@ -75,9 +74,8 @@ class HybridAlgorithm:
 
         return {'pic': self.result_pic(), 'matr': self.lab, 'num': self.class_num}
 
-    def run_from_edged(self, log, log_path, save, save_path):
+    def run_from_edged(self, log, log_path, save, save_path):  # if b\w already exists(for tuning)
         alg_stages = []
-        # print(self.image.size)
         ed = EdgeDetector(self.image)
 
         print("[INFO] performing image binarisation...")
@@ -119,7 +117,7 @@ class EdgeDetector:
         # initializing hed model
         proto_path = os.path.sep.join(['hed_model', "deploy.prototxt"])
         model_path = os.path.sep.join(['hed_model', "hed_pretrained_bsds.caffemodel"])
-        self.net = cv2.dnn.readNetFromCaffe(proto_path, model_path)
+        self.net = cv2.dnn.readNetFromCaffe(proto_path, model_path)  # uploading HED
 
         # register our new layer with the model
         cv2.dnn_registerLayer("Crop", CropLayer)
@@ -152,7 +150,7 @@ class EdgeDetector:
 
         return self.out_pil
 
-    def turning_to_black_and_white(self):
+    def turning_to_black_and_white(self):  # binarization function
         thresh = 25
         self.out_pil = self.out_pil.convert('L').point(lambda x: 255 if x > thresh else 0, mode='1')
 
@@ -205,47 +203,53 @@ class ClusterFinder:
         self.lab = [[0 for not_global_variable in range(self.W)] for another_not_global_variable in range(self.H)]
         for y in range(self.H):
             for x in range(self.W):
+                # if pixel is black and not in class
                 if self.lab[y][x] == 0 and self.image.getpixel((x, y)) == 0:
+                    # initialize new class
                     self.class_count += 1
                     self.lab[y][x] = self.class_count
                     p_stack = [[y, x]]
                     while len(p_stack) > 0:
+                        # get pixel from stack
                         last = p_stack.pop()
-
+                        # defining range of neighbours
                         y_first = last[0] if last[0] == 0 else last[0] - 1
                         y_last = last[0] if last[0] == self.H - 1 else last[0] + 2
                         for i in range(y_first, y_last):
                             x_first = last[1] if last[1] == 0 else last[1] - 1
                             x_last = last[1] if last[1] == self.W - 1 else last[1] + 2
                             for j in range(x_first, x_last):
+                                # if pixel is black and not in class
                                 if self.lab[i][j] == 0 and self.image.getpixel((j, i)) == 0:
                                     self.lab[i][j] = self.class_count
                                     p_stack.append([i, j])
 
         return self.lab, self.class_count
 
-    def edges_cutting_off(self):
-        edges = [[-1 if j != 0 else 0 for j in i] for i in self.lab]
+    def edges_cutting_off(self):  # edges deleting method
+        edges = [[-1 if j != 0 else 0 for j in i] for i in self.lab]   # matrix of edges
+        # repeating while edges exists
         while sum(i.count(0) for i in edges) > 0:
             for y in range(self.H):
                 for x in range(self.W):
-                    if edges[y][x] == 0:
+                    if edges[y][x] == 0:  # if pixel belongs to edge
                         nearest_classes = []
                         y_first = y if y == 0 else y - 1
                         y_last = y if y == self.H - 1 else y + 2
                         for i in range(y_first, y_last):
                             x_first = x if x == 0 else x - 1
                             x_last = x if x == self.W - 1 else x + 2
-                            for j in range(x_first, x_last):
+                            for j in range(x_first, x_last):  # searching for neughbours
                                 if edges[i][j] == -1:
                                     nearest_classes.append(self.lab[i][j])
-                        try:
+                        try:  # maximum of pixels in somewhat class is our chosen one's new class
                             edges[y][x] = max(nearest_classes, key=lambda x_: nearest_classes.count(x_))
                         except ValueError:
                             pass
-
+            # reinitializing of lab
             self.lab = [[edges[i][j] if edges[i][j] not in [0, -1] else self.lab[i][j]
                          for j in range(len(self.lab[0]))] for i in range(len(self.lab))]
+            # reinitializing of edges
             edges = [[-1 if j != 0 else 0 for j in i] for i in self.lab]
 
         self.lab = [[j - 1 for j in i] for i in self.lab]
@@ -263,6 +267,7 @@ class ClusterReducer:
 
         self.centres_list = self.get_areas_centres()
 
+    # returns list of pixel count for each class
     def count_classes(self):
         a = []
         for i in range(0, self.class_num):
@@ -272,11 +277,13 @@ class ClusterReducer:
             a.append(class_pixels_sum)
         return a
 
+    # returns list of class and pixel count
     def make_classes_dict(self):
         a = [[i, self.class_count[i]] for i in range(len(self.class_count))]
         a.sort(key=lambda x: x[1])
         return a
 
+    # counting class center
     def find_area_center(self, class_num):
         sum_x, sum_y, dot_num = 0, 0, 0
         for i in range(len(self.lab)):
@@ -287,16 +294,19 @@ class ClusterReducer:
                     dot_num += 1
         return [sum_x // dot_num, sum_y // dot_num]
 
+    # returns array of centres coordinates
     def get_areas_centres(self):
         a = []
         for i in range(len(self.class_count)):
             a.append([i, self.find_area_center(i)])
         return a
 
+    # distance function
     @staticmethod
     def find_distance(point1, point2):
         return m.sqrt((point1[0] - point2[0]) ** 2 + (point1[1] - point2[1]) ** 2)
 
+    # method of finding closest class
     def find_closest_class(self, class_num):
         min_dist = self.find_distance([0, 0], [len(self.lab), len(self.lab[0])])
         closest_class = -1
@@ -309,6 +319,7 @@ class ClusterReducer:
                     closest_class = i
         return closest_class
 
+    # reinintialize pixel for closest class
     def merge_closest_classes(self, class_num):
         closest_class_num = self.find_closest_class(class_num)
         for i in range(len(self.lab)):
@@ -329,8 +340,9 @@ class ClusterReducer:
             return 1
         return x[1] - y[1]
 
+    # merging with respect to all data structures
     def full_merging(self, arg):
-        smallest_class = self.class_count_dict[arg][0]
+        smallest_class = self.class_count_dict[arg][0]  # finding currently smallest class
         closest_class_num = self.merge_closest_classes(smallest_class)
         previous_value = self.class_count_dict[arg][1]
         self.class_count_dict[arg] = [None, None]
@@ -342,7 +354,7 @@ class ClusterReducer:
 
     def iterations(self, merging_type):
         i = 0
-        if merging_type == 'by hand':
+        if merging_type == 'by hand':  # merging classes by hand
             ans_string = ''
             print('[INFO] Picture contains', len(self.class_count_dict), 'classes')
             while ans_string != 'N':
@@ -359,7 +371,7 @@ class ClusterReducer:
 
                 ans_string = input('Enter `N` to finish merging')
 
-        elif merging_type == 'percentage':
+        elif merging_type == 'percentage':  # merging classes until they're big enough
             print('[INFO] Reducing classes by percentage...')
             percentage = 0.03
             while self.class_count_dict[i][1] < int(round(len(self.lab) * len(self.lab[0]) * (percentage ** 2))):
@@ -369,8 +381,9 @@ class ClusterReducer:
         return self.lab, len(self.class_count_dict) - i
 
 
+# executing algorithm with picture
 if __name__ == '__main__':
-    pic_name = "painting"
+    pic_name = "landscape"
     dir_ = os.getcwd()
     path = os.path.join(dir_, "logs")
     if not os.path.exists(path):

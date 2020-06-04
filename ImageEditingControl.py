@@ -23,19 +23,36 @@ class ImageEditingController:
 
     def editing_process(self):
         command = ''
-        working_with_layer = False
-        branch_list = []
+        working_with_layer = False  # flag for branch_actions
+        branch_list = []  # list of possible branch layers
         while command != 'break':
+            # parsing commands
             command = input('Enter command:')
             if command in self.actions:
                 image = self.verse.get_current_image()
 
                 if command in self.methods.operations:
+                    # matching commands with functions
                     if command == 'blur':
                         image = self.methods.blurred(image, int(input('Enter blurring degree:')))
 
                     if command == 'sharpen':
                         image = self.methods.sharped(image, int(input('Enter sharpen degree:')))
+
+                    if command == 'brightness':
+                        image = self.methods.brightness(image, int(input('Enter brightness degree:')))
+
+                    if command == 'contrast':
+                        image = self.methods.contrast(image, int(input('Enter contrast degree:')))
+
+                    if command == 'color':
+                        image = self.methods.color(image, int(input('Enter color degree:')))
+
+                    if command == 'sharpness':
+                        image = self.methods.sharpness(image, int(input('Enter sharpness degree:')))
+
+                    if command == 'noise':
+                        image = self.methods.sp_noise(image, float(input('Enter noisy type:')))
 
                     image.show()
                     self.verse.ask_bout_changes(image)
@@ -90,4 +107,3 @@ class ImageEditingController:
                 print('Wrong command! Try again.')
 
         return self.verse.get_current_image()
-# aaaaaaaaaaaaaaa

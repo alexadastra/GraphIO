@@ -59,6 +59,7 @@ class ImageLayersController:
     def get_layer_by_index(self, layer_num):
         return self.temp_merge_few([layer_num])
 
+    # merge layers
     def temp_merge_few(self, layers_list):
         merged = Image.new('RGB', self.image.size)
         draw = ImageDraw.Draw(merged)
@@ -68,6 +69,7 @@ class ImageLayersController:
                     draw.point(xy=(x, y), fill=(self.image.getpixel((x, y))))
         return merged
 
+    # merge layers and save it in lab
     def const_merge_few(self, layers_list):
         if len(layers_list) > 1:
             for y in range(len(self.lab)):
@@ -80,6 +82,7 @@ class ImageLayersController:
     def return_all(self):
         return self.temp_merge_few(self.layers_list)
 
+    # putting layer_pic on full_pic
     def merge_pictures(self, layer_pic, full_pic, branch_list):
         new_pic = Image.new('RGB', self.image.size)
         draw = ImageDraw.Draw(new_pic)
