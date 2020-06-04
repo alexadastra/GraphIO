@@ -1,57 +1,137 @@
 class ImageVersionController:
-    def __init__(self, image):
+    def __init__(self, image, matrix_):
         self.image_stack = [image]
+        self.layer_stack = [matrix_]
+
         self.current_image = self.image_stack[0]
-        self.operations = ['undo', 'redo', 'initial']
+        self.current_layer = self.layer_stack[0]
+
+        self.branch_stack = []
+        self.branch_active = False
+        self.branch_version_id = 0
+
+        self.operations = ['undo', 'redo', 'initial', 'pull_layer', 'push_layer']
         self.current_version_id = 0
 
-    def confirm_changes(self, image):
-        # if current_image != the last in the stack
-        if self.current_version_id < len(self.image_stack) - 1:
-            # resize the stack to current size by deleting next values
-            del self.image_stack[self.current_version_id:]
-        # appending image to stack and declaring it a current version
-        self.image_stack.append(image)
-        self.current_image = image
-        self.current_version_id += 1
+    def confirm_changes(self, image, matr):
+        if self.branch_active:
+            if self.branch_version_id < len(self.branch_stack) - 1:
+                del self.branch_stack[self.branch_version_id]
+            self.branch_stack.append(image)
+            self.current_image = image
+            self.branch_version_id += 1
+
+        elif matr is None and image is not None:
+            # if current_image != the last in the stack
+            if self.current_version_id < len(self.image_stack) - 1:
+                # resize the stack to current size by deleting next values
+                del self.image_stack[self.current_version_id:]
+            # appending image to stack and declaring it a current version
+            self.image_stack.append(image)
+            self.layer_stack.append(self.layer_stack[-1])
+            self.current_image = image
+            self.current_version_id += 1
+        elif matr is not None and image is None:
+            # if current_image != the last in the stack
+            if self.current_version_id < len(self.layer_stack) - 1:
+                # resize the stack to current size by deleting next values
+                del self.layer_stack[self.current_version_id:]
+            # appending image to stack and declaring it a current version
+            self.image_stack.append(self.image_stack[-1])
+            self.layer_stack.append(matr)
+            self.current_layer = matr
+            self.current_version_id += 1
 
     def abort_changes(self):
-        self.current_image = self.image_stack[-1]
+        if self.branch_active:
+            self.current_image = self.branch_stack[-1]
+        else:
+            self.current_image = self.image_stack[-1]
+            self.current_layer = self.layer_stack[-1]
 
     def get_current_image(self):
         return self.current_image
 
-    def get_initial(self):
-        return self.image_stack[0]
+    def get_current_lab(self):
+        return self.current_layer
 
-    def ask_bout_changes(self, image):
+    def get_initial_image(self):
+        if self.branch_active:
+            return self.branch_stack[0]
+        else:
+            return self.image_stack[0]
+
+    def get_initial_matr(self):
+        return self.layer_stack[0]
+
+    def ask_bout_changes(self, image=None, matr=None):
         print('Save changes? Y/N:')
         answer_str = input()
         while answer_str not in ['Y', 'N']:
             print('Wrong command, try again')
             answer_str = input()
         if answer_str == 'Y':
-            self.confirm_changes(image)
+            self.confirm_changes(image, matr)
         else:
             self.abort_changes()
 
     def undo(self):
-        if self.current_version_id > 0:
-            self.current_version_id -= 1
-            self.current_image = self.image_stack[self.current_version_id]
-            return 'change undone!'
+        if self.branch_active:
+            if self.branch_version_id > 0:
+                self.branch_version_id -= 1
+                self.current_image = self.branch_stack[self.branch_version_id]
+                return 'change undone!'
+            else:
+                return 'current version is the initial one!'
         else:
-            return 'current version is the initial one!'
+            if self.current_version_id > 0:
+                self.current_version_id -= 1
+                self.current_image = self.image_stack[self.current_version_id]
+                self.current_layer = self.layer_stack[self.current_version_id]
+                return 'change undone!'
+            else:
+                return 'current version is the initial one!'
 
     def redo(self):
-        if self.current_version_id < len(self.image_stack) - 1:
-            self.current_version_id += 1
-            self.current_image = self.image_stack[self.current_version_id]
-            return 'change redone'
+        if self.branch_active:
+            if self.branch_version_id < len(self.branch_stack) - 1:
+                self.current_version_id += 1
+                self.branch_version_id = self.image_stack[self.branch_version_id]
+                return 'change redone'
+            else:
+                return 'current version is the last one!'
+
         else:
-            return 'current version is the last one!'
+            if self.current_version_id < len(self.image_stack) - 1:
+                self.current_version_id += 1
+                self.current_image = self.image_stack[self.current_version_id]
+                self.current_layer = self.layer_stack[self.current_version_id]
+                return 'change redone'
+            else:
+                return 'current version is the last one!'
 
     def return_to_initial(self):
-        self.image_stack = [self.image_stack[0]]
-        self.current_image = self.image_stack[0]
-        self.current_version_id = 0
+        if self.branch_active:
+            self.branch_stack = [self.branch_stack[0]]
+            self.current_image = self.branch_stack[0]
+        else:
+            self.image_stack = [self.image_stack[0]]
+            self.current_image = self.image_stack[0]
+
+            self.layer_stack = [self.layer_stack[0]]
+            self.current_layer = self.current_layer[0]
+
+            self.current_version_id = 0
+
+    def pull_layer(self, image):
+        if not self.branch_active:
+            self.branch_active = True
+            self.branch_stack = [image]
+            self.current_image = self.branch_stack[0]
+
+    def push_layer(self, image):
+        if self.branch_active:
+            self.branch_active = False
+            self.confirm_changes(image=image, matr=None)
+            self.branch_stack = []
+            self.branch_version_id = 0
