@@ -90,3 +90,4 @@ class ImageEditingController:
                 print('Wrong command! Try again.')
 
         return self.verse.get_current_image()
+# aaaaaaaaaaaaaaa
