@@ -11,3 +11,4 @@ if __name__ == '__main__':
     image = Image.open(image_path)
     img_ctrl = ImageEditingController(image, log=True, log_path=log_path)
     img_ctrl.editing_process()
+# aaaaaaa
